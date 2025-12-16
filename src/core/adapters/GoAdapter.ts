@@ -17,15 +17,15 @@
  * ```
  */
 
-import { access, readFile } from 'node:fs/promises';
-import { join, basename } from 'node:path';
+import { access, readdir, readFile } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { BaseWorkspaceAdapter } from './BaseAdapter.js';
-import type { WorkspaceType, ProjectInfo, Version } from '../../types/index.js';
+import type { ProjectInfo, Version, WorkspaceType } from '../../types/index.js';
 import type { Result } from '../../types/result.js';
-import { ok, err, isOk } from '../../types/result.js';
+import { err, isOk, ok } from '../../types/result.js';
 import { isVersion } from '../../types/version.js';
-import type { WorkspaceDetectionError, FileOperationError } from '../../utils/errors.js';
-import { WorkspaceDetectionError as WDError, FileOperationError as FOError } from '../../utils/errors.js';
+import type { FileOperationError, WorkspaceDetectionError } from '../../utils/errors.js';
+import { FileOperationError as FOError, WorkspaceDetectionError as WDError } from '../../utils/errors.js';
 
 /**
  * Configuration for a Go file format
@@ -46,7 +46,7 @@ interface GoFileConfig {
  */
 export class GoAdapter extends BaseWorkspaceAdapter {
   readonly type: WorkspaceType = 'go';
-  readonly supportedFiles = ['go.mod', 'version.go', 'version.txt'] as const;
+  readonly supportedFiles = ['go.mod', 'version.go', 'VERSION.txt', 'version.txt'] as const;
 
   /**
    * File configurations in priority order
@@ -65,8 +65,16 @@ export class GoAdapter extends BaseWorkspaceAdapter {
       namePattern: /package\s+(\w+)/m,
     },
     {
+      filename: 'VERSION.txt',
+      // Support optional 'v' prefix (e.g., v1.0.0 or 1.0.0)
+      versionPattern: /^v?(\d+\.\d+\.\d+(?:[-+][\da-zA-Z.]+)*)$/m,
+      versionReplacement: '$VERSION',
+      defaultName: '', // No name in plain text file
+    },
+    {
       filename: 'version.txt',
-      versionPattern: /^(\d+\.\d+\.\d+(?:[-+][\da-zA-Z.]+)*)$/m,
+      // Support optional 'v' prefix (e.g., v1.0.0 or 1.0.0)
+      versionPattern: /^v?(\d+\.\d+\.\d+(?:[-+][\da-zA-Z.]+)*)$/m,
       versionReplacement: '$VERSION',
       defaultName: '', // No name in plain text file
     },
@@ -92,33 +100,72 @@ export class GoAdapter extends BaseWorkspaceAdapter {
    */
   async detect(workspacePath: string): Promise<Result<ProjectInfo, WorkspaceDetectionError>> {
     try {
+      const debug = process.env.ACTIONS_STEP_DEBUG === 'true' || process.env.RUNNER_DEBUG === '1';
+      if (debug) {
+        console.log(`[GoAdapter] Detecting in workspace: ${workspacePath}`);
+        try {
+          const files = await readdir(workspacePath);
+          console.log(`[GoAdapter] Directory contents: ${files.join(', ')}`);
+        } catch (e) {
+          console.log(`[GoAdapter] Failed to list directory: ${e}`);
+        }
+      }
+
       // Try each config file in priority order
       for (const config of this.FILE_CONFIGS) {
         const filePath = join(workspacePath, config.filename);
 
+        if (debug) {
+          console.log(`[GoAdapter] Checking file: ${filePath}`);
+        }
+
         try {
           await access(filePath);
+          if (debug) {
+            console.log(`[GoAdapter] File exists: ${config.filename}`);
+          }
         } catch {
           // File doesn't exist, try next
+          if (debug) {
+            console.log(`[GoAdapter] File not found: ${config.filename}`);
+          }
           continue;
         }
 
         // Parse the file
-        // Special handling for version.txt (no name pattern)
-        if (config.filename === 'version.txt') {
+        // Special handling for version.txt and VERSION.txt (no name pattern)
+        if (config.filename === 'version.txt' || config.filename === 'VERSION.txt') {
           try {
             const content = await readFile(filePath, 'utf-8');
+            if (debug) {
+              console.log(`[GoAdapter] ${config.filename} content: "${content.trim()}"`);
+            }
             const versionMatch = content.match(config.versionPattern);
+            if (debug) {
+              console.log(`[GoAdapter] ${config.filename} match: ${JSON.stringify(versionMatch)}`);
+            }
             if (versionMatch && versionMatch[1] && isVersion(versionMatch[1])) {
+              if (debug) {
+                console.log(`[GoAdapter] Detected version from ${config.filename}: ${versionMatch[1]}`);
+              }
               return ok({ name: basename(workspacePath), version: versionMatch[1] as Version });
             }
+            if (debug) {
+              console.log(`[GoAdapter] ${config.filename} parse failed, continuing...`);
+            }
             continue; // Try next file if parse failed
-          } catch {
+          } catch (readError) {
+            if (debug) {
+              console.log(`[GoAdapter] Error reading version.txt: ${readError}`);
+            }
             continue;
           }
         }
 
         // Standard parsing for go.mod and version.go
+        if (debug) {
+          console.log(`[GoAdapter] Parsing ${config.filename} with regex`);
+        }
         const parseResult = await this.parseFile(filePath, {
           format: 'regex',
           versionPattern: config.versionPattern,
@@ -126,10 +173,16 @@ export class GoAdapter extends BaseWorkspaceAdapter {
         });
 
         if (isOk(parseResult)) {
+          if (debug) {
+            console.log(`[GoAdapter] Detected from ${config.filename}: ${JSON.stringify(parseResult.value)}`);
+          }
           return ok(parseResult.value);
         }
 
         // If parse failed, continue to next file
+        if (debug) {
+          console.log(`[GoAdapter] Parse failed for ${config.filename}, trying next...`);
+        }
         continue;
       }
 
@@ -199,21 +252,38 @@ export class GoAdapter extends BaseWorkspaceAdapter {
   }
 
   /**
-   * Find all existing configuration files
+   * Find all existing configuration files that contain a valid version
+   *
+   * Only returns files that both exist AND contain a matchable version pattern.
+   * This ensures we only try to update files that actually have versions.
    *
    * @param workspacePath - Path to the workspace directory
-   * @returns Array of configuration file configs that exist
+   * @returns Array of configuration file configs that exist and have versions
    */
   private async findAllConfigFiles(workspacePath: string): Promise<GoFileConfig[]> {
     const existingFiles: GoFileConfig[] = [];
+    const foundFilenames = new Set<string>();
 
     for (const config of this.FILE_CONFIGS) {
       const filePath = join(workspacePath, config.filename);
       try {
         await access(filePath);
-        existingFiles.push(config);
+
+        // Deduplicate by lowercase filename to handle case-insensitive filesystems
+        const normalizedName = config.filename.toLowerCase();
+        if (foundFilenames.has(normalizedName)) {
+          continue;
+        }
+
+        // Verify the file actually contains a matchable version pattern
+        const content = await readFile(filePath, 'utf-8');
+        const versionMatch = content.match(config.versionPattern);
+        if (versionMatch && versionMatch[1] && isVersion(versionMatch[1])) {
+          foundFilenames.add(normalizedName);
+          existingFiles.push(config);
+        }
       } catch {
-        // File doesn't exist, skip
+        // File doesn't exist or can't be read, skip
         continue;
       }
     }

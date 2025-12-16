@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 3.1.16 (2025-12-06)
+
+### Bug Fixes
+
+* goadapter fix attempt 1765039715 ([9c3c998](https://github.com/dragoscops/bumpalicious/commit/9c3c998be60eeef1fb766ee9ca4db5f1be951db7))
+
+## 3.1.15 (2025-12-06)
+
+### Bug Fixes
+
+* goadapter fix attempt 1765037012 ([fb1f273](https://github.com/dragoscops/bumpalicious/commit/fb1f273edc4195e483915086064659d049dca845))
+
+## 3.1.14 (2025-12-06)
+
+### Bug Fixes
+
+* workspace service to resolve path before detecting veresion ([3914842](https://github.com/dragoscops/bumpalicious/commit/3914842b6bdc52a9fc9293e4f66f5183f54ca5cf))
+
+## 3.1.13 (2025-12-06)
+
+### Bug Fixes
+
+* added debugger for goadapter ([bff25c9](https://github.com/dragoscops/bumpalicious/commit/bff25c9aaa065c7e3f8a2ba17d2cdcc1dfd22e07))
+
+## 3.1.12 (2025-11-30)
+
+### Bug Fixes
+
+* fixed goadapter for detecting version ([5dd4992](https://github.com/dragoscops/bumpalicious/commit/5dd4992f9f870dac4f77a2b9008f1ed1e1716784))
+
+## 3.1.11 (2025-11-30)
+
+### Bug Fixes
+
+* github action not to report version bumps when there is none ([c51a867](https://github.com/dragoscops/bumpalicious/commit/c51a867a351b5e8a1fcaef9b805224eafc5938e0))
+
+## 3.1.10 (2025-11-22)
+
+### Bug Fixes
+
+* fixing pr bump merge detection ([9276b13](https://github.com/dragoscops/bumpalicious/commit/9276b1306c3ece93565d69a80df6fbb3a2c21aae))
+
+## 3.1.9 (2025-11-22)
+
+### Bug Fixes
+
+* moved set output closer to outputed events ([a1aae26](https://github.com/dragoscops/bumpalicious/commit/a1aae26642cfc9f7fdf8ecbd6fba39afc9a577ca))
+
 ## 3.1.8 (2025-11-18)
 
 ### Bug Fixes
